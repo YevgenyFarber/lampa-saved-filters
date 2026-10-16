@@ -6,4 +6,4 @@ Install: Settings → Extensions → add
 
     https://yevgenyfarber.github.io/lampa-saved-filters/saved_filters.js
 
-Use: run a filter, open **Saved filters** in the menu → **Save current filter**. Select a saved filter to open it; hold OK to delete.
+Use: Filter → pick options → **Save & search** (name it). Reopen via Filter → **Saved filters** or the left-menu item. Hold OK on a saved filter to delete it.
