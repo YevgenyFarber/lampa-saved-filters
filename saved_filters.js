@@ -153,11 +153,9 @@
         Lampa.Noty.show(t(same >= 0 ? 'saved_filters_updated' : 'saved_filters_saved'));
     }
 
-    function askNameAndSave(activity, pending) {
-        Lampa.Input.edit({ title: t('saved_filters_name'), value: editingName, free: true, nosave: true }, function (name) {
-            Lampa.Controller.toggle('content');
-            if (name) save(activity, pending, name);
-        });
+    // Ask before the search starts: once the results page loads it takes the remote, and a dialog opened after that is stuck.
+    function askName(done) {
+        Lampa.Input.edit({ title: t('saved_filters_name'), value: editingName, free: true, nosave: true }, done);
     }
 
     // ---- hooks into Lampa ----------------------------------------------------
@@ -200,8 +198,11 @@
                 );
                 params.onSelect = function (a) {
                     if (a.sf_save) {
-                        pendingSave = { summary: summarize(groups), state: snapshot(groups) };
-                        origOnSelect({ search: true });
+                        askName(function (name) {
+                            if (!name) return origShow.call(Lampa.Select, params);
+                            pendingSave = { name: name, summary: summarize(groups), state: snapshot(groups) };
+                            origOnSelect({ search: true });
+                        });
                     }
                     else if (a.sf_list) showList(function () { origShow.call(Lampa.Select, params); });
                     else origOnSelect(a);
@@ -220,7 +221,7 @@
                 if (pendingSave && isFilterActivity(object)) {
                     var pending = pendingSave;
                     pendingSave = null;
-                    setTimeout(function () { askNameAndSave(object, pending); }, 300);
+                    save(object, pending, pending.name);
                 }
                 return result;
             };

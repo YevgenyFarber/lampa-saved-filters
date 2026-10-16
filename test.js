@@ -23,10 +23,10 @@ global.Lampa = {
   Storage: { get: k => store[k] || [], set: (k,v) => store[k] = JSON.parse(JSON.stringify(v)) },
   Select: { show(p){ shown = p; } },
   Activity: { push(o){ pushed.push(o); }, replace(o){ pushed.push(o); } },
-  Input: { edit(p, cb){ inputs.push(p.value); cb(next.shift()); } },
+  Input: { edit(p, cb){ inputs.push(p.value); pushesAtInput = pushed.length; cb(next.shift()); } },
   Controller: { toggle(){} }, Noty: { show(){} }, Listener: { follow(){} },
 };
-let next = [];
+let next = [], pushesAtInput = -1;
 eval(fs.readFileSync(__dirname + '/saved_filters.js', 'utf8'));
 const pick = (title) => shown.items.find(i => i.title === title);
 
@@ -34,6 +34,7 @@ const pick = (title) => shown.items.find(i => i.title === title);
 data.rating.items[1].selected = true; data.genres_movie.items[0].checked = true;
 main(); next = ['A']; shown.onSelect(pick('saved_filters_save'));
 assert.equal(inputs.at(-1), '', 'new filter name starts empty');
+assert.equal(pushed.length, pushesAtInput + 1, 'name asked BEFORE the search (dialog after results load gets stuck)');
 assert.equal(store.saved_filters[0].url, 'discover/movie?r=6&g=Комедия');
 
 // 2. user messes the filter: Сериалы, от 8, Детектив
