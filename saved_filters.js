@@ -3,7 +3,9 @@
 
     // Lampa's built-in Filter (menu -> Фильтр) ends in an activity
     // {component:'category_full', source, url:'discover/...' | '?cat=...'}.
-    // ponytail: we save that activity, not the filter checkboxes, so reopening is one Activity.push.
+    // We save that activity (to reopen in one push) plus the menu choices (to edit/clone).
+    // The filter menu's groups are Lampa's module-level objects, so setting
+    // selected/checked on them is what the built-in menu itself does.
     var STORAGE_KEY = 'saved_filters';
 
     var ICON = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
@@ -11,7 +13,9 @@
         '<path d="M17 14l1.2 2.4 2.6.4-1.9 1.8.5 2.6-2.4-1.3-2.4 1.3.5-2.6-1.9-1.8 2.6-.4L17 14z" fill="currentColor"/>' +
         '</svg>';
 
-    var pendingSave = null; // {summary} while "save & search" waits for the filter's activity
+    var pendingSave = null;    // {summary, state} while "save & search" waits for the filter's activity
+    var pendingRestore = null; // saved filter to load into the filter menu on its next open
+    var editingName = '';      // name of the filter being edited, prefilled on save
 
     function t(key) { return Lampa.Lang.translate(key); }
 
@@ -29,6 +33,65 @@
         });
     }
 
+    function openFilterMenu() {
+        var item = $('.menu .menu__item[data-action="filter"]');
+        if (!item.length) return false;
+        item.eq(0).trigger('hover:enter');
+        return true;
+    }
+
+    // ---- filter menu state ---------------------------------------------------
+
+    function groupsOf(items) {
+        return items.filter(function (g) { return g.items && !g.sf_save && !g.sf_list; });
+    }
+
+    // ponytail: keyed by translated titles; switching Lampa's language breaks Edit for older saves (Open still works).
+    function snapshot(groups) {
+        var state = {};
+        groups.forEach(function (g) {
+            state[g.title] = g.items.filter(function (i) { return i.selected || i.checked; })
+                .map(function (i) { return i.title; });
+        });
+        return state;
+    }
+
+    function apply(groups, state) {
+        groups.forEach(function (g) {
+            var picked = state[g.title];
+            if (!picked) return;
+            g.items.forEach(function (i) {
+                var on = picked.indexOf(i.title) >= 0;
+                if (i.checkbox) i.checked = on;
+                else i.selected = on;
+            });
+        });
+    }
+
+    // Same as the built-in selected(): "Комедия, Драма" or "Не выбрано".
+    function refreshSubtitles(groups) {
+        groups.forEach(function (g) {
+            var titles = g.items.filter(function (i) { return i.selected || i.checked; })
+                .map(function (i) { return i.title; });
+            g.subtitle = titles.length ? titles.join(', ') : t('nochoice');
+        });
+    }
+
+    function summarize(groups) {
+        var none = t('nochoice');
+        return groups.filter(function (g) { return g.subtitle && g.subtitle !== none; })
+            .map(function (g) { return g.subtitle; }).join(', ');
+    }
+
+    // movie / tv decides which genre list the filter menu shows.
+    function kind(groups) {
+        var type = groups.find(function (g) { return g.items.some(function (i) { return i.cat; }); });
+        var cur = type && type.items.find(function (i) { return i.selected; });
+        return cur && cur.cat.indexOf('movie') >= 0 ? 'movie' : 'tv';
+    }
+
+    // ---- saved list ----------------------------------------------------------
+
     function showList(onBack) {
         var list = load();
         var items = list.map(function (f, i) {
@@ -43,25 +106,56 @@
             onBack: onBack,
             onSelect: function (a) {
                 if (a.empty) onBack();
-                else open(list[a.index]);
-            },
-            // Long press (OK held) deletes.
-            onLong: function (a) {
-                if (a.index === undefined) return;
-                list.splice(a.index, 1);
-                store(list);
-                Lampa.Noty.show(t('saved_filters_deleted'));
-                showList(onBack);
+                else showActions(list, a.index, onBack);
             }
         });
     }
 
-    // "Фильм, от 6, Комедия" from the subtitles the filter menu already rendered.
-    function summarize(items) {
-        var none = t('nochoice');
-        return items.filter(function (g) { return g.items && g.subtitle && g.subtitle !== none; })
-            .map(function (g) { return g.subtitle; }).join(', ');
+    function showActions(list, index, onBack) {
+        var f = list[index];
+        var items = [{ title: t('saved_filters_open'), act: 'open' }];
+        if (f.state) items.push({ title: t('saved_filters_edit'), subtitle: t('saved_filters_edit_hint'), act: 'edit' });
+        items.push({ title: t('saved_filters_delete'), act: 'delete' });
+
+        Lampa.Select.show({
+            title: f.name,
+            items: items,
+            onBack: function () { showList(onBack); },
+            onSelect: function (a) {
+                if (a.act === 'open') open(f);
+                else if (a.act === 'edit') {
+                    pendingRestore = f;
+                    if (!openFilterMenu()) { pendingRestore = null; Lampa.Noty.show(t('saved_filters_no_menu')); }
+                }
+                else {
+                    list.splice(index, 1);
+                    store(list);
+                    Lampa.Noty.show(t('saved_filters_deleted'));
+                    showList(onBack);
+                }
+            }
+        });
     }
+
+    function save(activity, pending, name) {
+        var list = load();
+        var entry = { name: name, summary: pending.summary, state: pending.state, url: activity.url, source: activity.source };
+        var same = list.findIndex(function (f) { return f.name === name; });
+        if (same >= 0) list[same] = entry; // same name = update, new name = clone
+        else list.push(entry);
+        store(list);
+        editingName = '';
+        Lampa.Noty.show(t(same >= 0 ? 'saved_filters_updated' : 'saved_filters_saved'));
+    }
+
+    function askNameAndSave(activity, pending) {
+        Lampa.Input.edit({ title: t('saved_filters_name'), value: editingName || pending.summary, free: true, nosave: true }, function (name) {
+            Lampa.Controller.toggle('content');
+            if (name) save(activity, pending, name);
+        });
+    }
+
+    // ---- hooks into Lampa ----------------------------------------------------
 
     function isFilterMenu(params) {
         return params && params.title === t('title_filter') && params.items &&
@@ -73,35 +167,35 @@
             (a.url.indexOf('discover') === 0 || a.url.indexOf('?cat=') === 0);
     }
 
-    function askNameAndSave(activity, summary) {
-        Lampa.Input.edit({ title: t('saved_filters_name'), value: summary, free: true, nosave: true }, function (name) {
-            Lampa.Controller.toggle('content');
-            if (!name) return;
-            var list = load();
-            list.push({ name: name, summary: summary, url: activity.url, source: activity.source });
-            store(list);
-            Lampa.Noty.show(t('saved_filters_saved'));
-        });
-    }
-
-    // Add "Save & search" and "My filters" to the built-in filter menu.
     function patchSelect() {
         var origShow = Lampa.Select.show;
 
         Lampa.Select.show = function (params) {
             if (isFilterMenu(params) && !params.saved_filters) {
+                var groups = groupsOf(params.items);
+
+                if (pendingRestore) {
+                    var before = kind(groups);
+                    apply(groups, pendingRestore.state);
+                    // Type switched movie<->tv: the menu was built with the other genre list, rebuild it.
+                    if (kind(groups) !== before && openFilterMenu()) return;
+                    refreshSubtitles(groups);
+                    editingName = pendingRestore.name;
+                    pendingRestore = null;
+                }
+
                 var origOnSelect = params.onSelect;
                 var count = load().length;
                 var at = params.items.findIndex(function (i) { return i.search; }) + 1;
 
                 params.saved_filters = true;
                 params.items.splice(at, 0,
-                    { title: t('saved_filters_save'), sf_save: true },
+                    { title: t('saved_filters_save'), subtitle: editingName ? t('saved_filters_editing') + ': ' + editingName : '', sf_save: true },
                     { title: t('saved_filters_title'), subtitle: count ? String(count) : t('saved_filters_none'), sf_list: true }
                 );
                 params.onSelect = function (a) {
                     if (a.sf_save) {
-                        pendingSave = { summary: summarize(params.items) };
+                        pendingSave = { summary: summarize(groups), state: snapshot(groups) };
                         origOnSelect({ search: true });
                     }
                     else if (a.sf_list) showList(function () { origShow.call(Lampa.Select, params); });
@@ -119,9 +213,9 @@
             Lampa.Activity[method] = function (object) {
                 var result = orig.apply(this, arguments);
                 if (pendingSave && isFilterActivity(object)) {
-                    var summary = pendingSave.summary;
+                    var pending = pendingSave;
                     pendingSave = null;
-                    setTimeout(function () { askNameAndSave(object, summary); }, 300);
+                    setTimeout(function () { askNameAndSave(object, pending); }, 300);
                 }
                 return result;
             };
@@ -148,14 +242,21 @@
         window.saved_filters_plugin = true;
 
         Lampa.Lang.add({
-            saved_filters_title:   { ru: 'Мои фильтры', en: 'Saved filters', uk: 'Мої фільтри' },
-            saved_filters_save:    { ru: 'Сохранить и искать', en: 'Save & search', uk: 'Зберегти і шукати' },
-            saved_filters_name:    { ru: 'Название фильтра', en: 'Filter name', uk: 'Назва фільтра' },
-            saved_filters_saved:   { ru: 'Фильтр сохранён', en: 'Filter saved', uk: 'Фільтр збережено' },
-            saved_filters_deleted: { ru: 'Фильтр удалён', en: 'Filter deleted', uk: 'Фільтр видалено' },
-            saved_filters_empty:   { ru: 'Нет сохранённых фильтров', en: 'No saved filters', uk: 'Немає збережених фільтрів' },
-            saved_filters_none:    { ru: 'Пусто', en: 'Empty', uk: 'Порожньо' },
-            saved_filters_hint:    { ru: 'Фильтр → выберите параметры → «Сохранить и искать»', en: 'Filter → pick options → “Save & search”', uk: 'Фільтр → оберіть параметри → «Зберегти і шукати»' }
+            saved_filters_title:     { ru: 'Мои фильтры', en: 'Saved filters', uk: 'Мої фільтри' },
+            saved_filters_save:      { ru: 'Сохранить и искать', en: 'Save & search', uk: 'Зберегти і шукати' },
+            saved_filters_name:      { ru: 'Название фильтра', en: 'Filter name', uk: 'Назва фільтра' },
+            saved_filters_saved:     { ru: 'Фильтр сохранён', en: 'Filter saved', uk: 'Фільтр збережено' },
+            saved_filters_updated:   { ru: 'Фильтр обновлён', en: 'Filter updated', uk: 'Фільтр оновлено' },
+            saved_filters_deleted:   { ru: 'Фильтр удалён', en: 'Filter deleted', uk: 'Фільтр видалено' },
+            saved_filters_open:      { ru: 'Открыть', en: 'Open', uk: 'Відкрити' },
+            saved_filters_edit:      { ru: 'Изменить / копировать', en: 'Edit / copy', uk: 'Змінити / копіювати' },
+            saved_filters_edit_hint: { ru: 'Новое имя — копия, то же имя — обновить', en: 'New name = copy, same name = update', uk: 'Нова назва — копія, та сама — оновити' },
+            saved_filters_editing:   { ru: 'Редактируется', en: 'Editing', uk: 'Редагується' },
+            saved_filters_delete:    { ru: 'Удалить', en: 'Delete', uk: 'Видалити' },
+            saved_filters_empty:     { ru: 'Нет сохранённых фильтров', en: 'No saved filters', uk: 'Немає збережених фільтрів' },
+            saved_filters_none:      { ru: 'Пусто', en: 'Empty', uk: 'Порожньо' },
+            saved_filters_no_menu:   { ru: 'Пункт «Фильтр» не найден в меню', en: 'Filter item not found in menu', uk: 'Пункт «Фільтр» не знайдено в меню' },
+            saved_filters_hint:      { ru: 'Фильтр → выберите параметры → «Сохранить и искать»', en: 'Filter → pick options → “Save & search”', uk: 'Фільтр → оберіть параметри → «Зберегти і шукати»' }
         });
 
         patchSelect();

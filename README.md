@@ -6,4 +6,6 @@ Install: Settings → Extensions → add
 
     https://yevgenyfarber.github.io/lampa-saved-filters/saved_filters.js
 
-Use: Filter → pick options → **Save & search** (name it). Reopen via Filter → **Saved filters** or the left-menu item. Hold OK on a saved filter to delete it.
+Use: Filter → pick options → **Save & search** (name it). Filter → **Saved filters** → pick one → Open / Edit / copy / Delete. Edit loads its options back into Filter; save with a new name to clone, same name to update.
+
+Test: `node test.js`
