@@ -42,7 +42,7 @@ data.rating.items.forEach(i=>i.selected=false); data.rating.items[2].selected=tr
 data.genres_tv.items[0].checked = true;
 
 // 3. Мои фильтры -> A -> Изменить: restores movie, rebuilds genre list, restores Комедия
-main(); shown.onSelect(pick('saved_filters_title')); shown.onSelect(shown.items[0]); shown.onSelect(shown.items.find(i=>i.act==='edit'));
+main(); shown.onSelect(pick('saved_filters_title')); shown.onLong(shown.items[0]); shown.onSelect(shown.items.find(i=>i.act==='edit'));
 assert.equal(shown.title, 'Фильтр');
 assert.equal(pick('Жанр'), data.genres_movie, 'genre list rebuilt for movie');
 assert.equal(data.rating.subtitle, 'от 6'); assert.equal(data.genres_movie.subtitle, 'Комедия');
@@ -56,12 +56,19 @@ assert.equal(store.saved_filters[1].url, 'discover/movie?r=6&g=Комедия,Д
 assert.equal(store.saved_filters[0].url, 'discover/movie?r=6&g=Комедия', 'original A untouched');
 
 // 5. edit B, keep name -> update in place
-main(); shown.onSelect(pick('saved_filters_title')); shown.onSelect(shown.items[1]); shown.onSelect(shown.items.find(i=>i.act==='edit'));
+main(); shown.onSelect(pick('saved_filters_title')); shown.onLong(shown.items[1]); shown.onSelect(shown.items.find(i=>i.act==='edit'));
 data.rating.items.forEach(i=>i.selected=false); data.rating.items[2].selected=true; main();
 next = ['B']; shown.onSelect(pick('saved_filters_save'));
 assert.equal(store.saved_filters.length, 2); assert.equal(store.saved_filters[1].url, 'discover/movie?r=8&g=Комедия,Драма');
 
 // 6. delete A
-main(); shown.onSelect(pick('saved_filters_title')); shown.onSelect(shown.items[0]); shown.onSelect(shown.items.find(i=>i.act==='delete'));
+main(); shown.onSelect(pick('saved_filters_title')); shown.onLong(shown.items[0]); shown.onSelect(shown.items.find(i=>i.act==='delete'));
 assert.deepEqual(store.saved_filters.map(f=>f.name), ['B']);
 console.log('OK');
+// 7. click applies directly, old saves (no state) show Edit with a hint
+main(); shown.onSelect(pick('saved_filters_title')); shown.onSelect(shown.items[0]);
+assert.equal(pushed.at(-1).url, store.saved_filters[0].url); assert.equal(pushed.at(-1).title, 'B');
+store.saved_filters.push({name:'old', url:'discover/movie?x', source:'tmdb'});
+main(); shown.onSelect(pick('saved_filters_title')); shown.onLong(shown.items[1]);
+assert.equal(shown.items.find(i=>i.act==='edit').subtitle, 'saved_filters_old');
+console.log('OK click/long');

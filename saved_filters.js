@@ -106,7 +106,11 @@
             onBack: onBack,
             onSelect: function (a) {
                 if (a.empty) onBack();
-                else showActions(list, a.index, onBack);
+                else open(list[a.index]);
+            },
+            // Long press (OK held) = Open / Edit / Delete.
+            onLong: function (a) {
+                if (a.index !== undefined) showActions(list, a.index, onBack);
             }
         });
     }
@@ -114,7 +118,7 @@
     function showActions(list, index, onBack) {
         var f = list[index];
         var items = [{ title: t('saved_filters_open'), act: 'open' }];
-        if (f.state) items.push({ title: t('saved_filters_edit'), subtitle: t('saved_filters_edit_hint'), act: 'edit' });
+        items.push({ title: t('saved_filters_edit'), subtitle: t(f.state ? 'saved_filters_edit_hint' : 'saved_filters_old'), act: 'edit' });
         items.push({ title: t('saved_filters_delete'), act: 'delete' });
 
         Lampa.Select.show({
@@ -124,6 +128,7 @@
             onSelect: function (a) {
                 if (a.act === 'open') open(f);
                 else if (a.act === 'edit') {
+                    if (!f.state) return Lampa.Noty.show(t('saved_filters_old'));
                     pendingRestore = f;
                     if (!openFilterMenu()) { pendingRestore = null; Lampa.Noty.show(t('saved_filters_no_menu')); }
                 }
@@ -252,11 +257,12 @@
             saved_filters_edit:      { ru: 'Изменить / копировать', en: 'Edit / copy', uk: 'Змінити / копіювати' },
             saved_filters_edit_hint: { ru: 'Новое имя — копия, то же имя — обновить', en: 'New name = copy, same name = update', uk: 'Нова назва — копія, та сама — оновити' },
             saved_filters_editing:   { ru: 'Редактируется', en: 'Editing', uk: 'Редагується' },
+            saved_filters_old:       { ru: 'Сохранён старой версией — пересохраните, чтобы изменять', en: 'Saved by an old version — re-save it to edit', uk: 'Збережено старою версією — перезбережіть, щоб змінювати' },
             saved_filters_delete:    { ru: 'Удалить', en: 'Delete', uk: 'Видалити' },
             saved_filters_empty:     { ru: 'Нет сохранённых фильтров', en: 'No saved filters', uk: 'Немає збережених фільтрів' },
             saved_filters_none:      { ru: 'Пусто', en: 'Empty', uk: 'Порожньо' },
             saved_filters_no_menu:   { ru: 'Пункт «Фильтр» не найден в меню', en: 'Filter item not found in menu', uk: 'Пункт «Фільтр» не знайдено в меню' },
-            saved_filters_hint:      { ru: 'Фильтр → выберите параметры → «Сохранить и искать»', en: 'Filter → pick options → “Save & search”', uk: 'Фільтр → оберіть параметри → «Зберегти і шукати»' }
+            saved_filters_hint:      { ru: 'Фильтр → выберите параметры → «Сохранить и искать». Удерживайте OK на фильтре для действий', en: 'Filter → pick options → “Save & search”. Hold OK on a filter for actions', uk: 'Фільтр → оберіть параметри → «Зберегти і шукати». Утримуйте OK на фільтрі для дій' }
         });
 
         patchSelect();
