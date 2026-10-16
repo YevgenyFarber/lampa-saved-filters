@@ -149,7 +149,7 @@
     }
 
     function askNameAndSave(activity, pending) {
-        Lampa.Input.edit({ title: t('saved_filters_name'), value: editingName || pending.summary, free: true, nosave: true }, function (name) {
+        Lampa.Input.edit({ title: t('saved_filters_name'), value: editingName, free: true, nosave: true }, function (name) {
             Lampa.Controller.toggle('content');
             if (name) save(activity, pending, name);
         });

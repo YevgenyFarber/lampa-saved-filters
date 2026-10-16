@@ -33,7 +33,7 @@ const pick = (title) => shown.items.find(i => i.title === title);
 // 1. user sets Фильмы + от 6 + Комедия, saves as "A"
 data.rating.items[1].selected = true; data.genres_movie.items[0].checked = true;
 main(); next = ['A']; shown.onSelect(pick('saved_filters_save'));
-assert.equal(inputs.at(-1), 'Фильмы, от 6, Комедия');
+assert.equal(inputs.at(-1), '', 'new filter name starts empty');
 assert.equal(store.saved_filters[0].url, 'discover/movie?r=6&g=Комедия');
 
 // 2. user messes the filter: Сериалы, от 8, Детектив
