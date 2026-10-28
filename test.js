@@ -89,3 +89,13 @@ assert.equal(pick('saved_filters_keyword').subtitle, 'True crime', 'Edit restore
 kwPick(0); main(); shown.onSelect(pick('Начать поиск'));
 assert.ok(!pushed.at(-1).url.includes('with_keywords'), 'no keyword when set to any');
 console.log('OK keyword');
+// 9. streaming provider + keyword combine; saved and restored
+const prPick = (title) => { const g = pick('saved_filters_streaming'); g.items.forEach(i=>i.selected=i.title===title); };
+main(); kwPick(1); prPick('Netflix'); main(); shown.onSelect(pick('Начать поиск'));
+assert.ok(pushed.at(-1).url.endsWith('&with_keywords=33722&with_watch_providers=8&watch_region=US'), pushed.at(-1).url);
+main(); kwPick(0); prPick('Paramount+'); main(); next = ['P']; shown.onSelect(pick('saved_filters_save'));
+assert.ok(store.saved_filters.find(f=>f.name==='P').url.endsWith('&with_watch_providers=2303|2616&watch_region=US'));
+prPick('filter_any'); main();
+shown.onSelect(pick('saved_filters_title')); shown.onLong(shown.items.find(i=>i.title==='P')); shown.onSelect(shown.items.find(i=>i.act==='edit'));
+assert.equal(pick('saved_filters_streaming').subtitle, 'Paramount+', 'Edit restores the provider');
+console.log('OK streaming');
