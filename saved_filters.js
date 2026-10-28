@@ -23,7 +23,8 @@
     // shortcut: streaming availability is for the US catalogue (watch_region=US); add a region option if that's wrong.
     function provider(title, ids) { return { title: title, query: 'with_watch_providers=' + ids + '&watch_region=US' }; }
     var extraGroups = [
-        { lang: 'saved_filters_keyword', items: [{ any: true }, { title: 'True crime', query: 'with_keywords=33722' }] },
+        { lang: 'saved_filters_keyword', items: [{ any: true }, { title: 'True crime', query: 'with_keywords=33722' },
+            { title: 'Interrogation', query: 'with_keywords=15271|166582' }] }, // interrogation | police interrogation
         { lang: 'saved_filters_streaming', items: [{ any: true },
             provider('Netflix', '8'), provider('Amazon Prime Video', '9'), provider('Disney+', '337'),
             provider('HBO Max', '1899'), provider('Apple TV+', '350'), provider('Hulu', '15'),
