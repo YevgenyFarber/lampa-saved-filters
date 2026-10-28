@@ -17,6 +17,7 @@
     var pendingRestore = null; // saved filter to load into the filter menu on its next open
     var editingName = '';      // name of the filter being edited, prefilled on save
     var pendingQuery = '';     // TMDB discover params to add to the search the filter is about to run
+    var pendingSort = '';      // sort_by for that search ('date' becomes the movie/tv release-date field)
 
     // Options Lampa's filter lacks: TMDB has no "true crime" genre (only a keyword) and no streaming-service genre.
     // Kept module-level like Lampa's own groups so the choice survives the menu being rebuilt.
@@ -30,7 +31,24 @@
         provider('Netflix', '8'), provider('Amazon Prime Video', '9'), provider('Disney+', '337'),
         provider('HBO Max', '1899'), provider('Apple TV+', '350'), provider('Hulu', '15'),
         provider('Paramount+', '2303|2616'), provider('Peacock', '386|387')] };
-    var extraGroups = [keywordGroup, matchGroup, streamingGroup];
+    // Lampa's TMDB filter has no sort (TMDB defaults to popularity); CUB has its own Sort, so this one is TMDB-only.
+    var sortGroup = { lang: 'saved_filters_sort', tmdb: true, items: [
+        { lang: 'saved_filters_sort_new', sort: 'date.desc' },
+        { lang: 'saved_filters_sort_old', sort: 'date.asc' },
+        { lang: 'saved_filters_sort_popular', sort: 'popularity.desc' }] };
+    var extraGroups = [keywordGroup, matchGroup, streamingGroup, sortGroup];
+
+    // Saves made before sorting existed have no sort_by, so they also get the newest-first default.
+    function sortQuery(url, sort) {
+        if (url.indexOf('discover') !== 0 || url.indexOf('sort_by=') >= 0) return '';
+        var field = url.indexOf('discover/movie') === 0 ? 'primary_release_date' : 'first_air_date';
+        var query = '&sort_by=' + sort.replace('date', field);
+        // Newest first would otherwise start with announced, unreleased titles.
+        if (sort === 'date.desc' && url.indexOf(field + '.lte') < 0) {
+            query += '&' + field + '.lte=' + new Date().toISOString().slice(0, 10);
+        }
+        return query;
+    }
 
     function extraQuery() {
         var kws = keywordGroup.items.filter(function (i) { return i.checked; });
@@ -48,7 +66,7 @@
 
     function open(f) {
         Lampa.Activity.push({
-            url: f.url,
+            url: f.url + sortQuery(f.url, 'date.desc'),
             title: f.name,
             component: 'category_full',
             source: f.source,
@@ -202,7 +220,7 @@
                 extraGroups.forEach(function (g) {
                     g.title = t(g.lang);
                     g.items.forEach(function (i) { if (i.lang) i.title = t(i.lang); });
-                    params.items.push(g);
+                    if (!g.tmdb || Lampa.Storage.field('source') !== 'cub') params.items.push(g);
                 });
                 var groups = groupsOf(params.items);
 
@@ -232,6 +250,7 @@
                 params.onSelect = function (a) {
                     if (a.search || a.sf_save) {
                         pendingQuery = extraQuery();
+                        pendingSort = sortGroup.items.find(function (i) { return i.selected; }).sort;
                     }
                     if (a.sf_save) {
                         askName(function (name) {
@@ -254,10 +273,10 @@
             var orig = Lampa.Activity[method];
             Lampa.Activity[method] = function (object) {
                 // shortcut: TMDB only; the CUB source ('?cat=') has no keyword/provider parameters we know of.
-                if (pendingQuery && isFilterActivity(object) && object.url.indexOf('discover') === 0) {
-                    object.url += pendingQuery;
+                if (pendingSort && isFilterActivity(object) && object.url.indexOf('discover') === 0) {
+                    object.url += pendingQuery + sortQuery(object.url, pendingSort);
                 }
-                if (isFilterActivity(object)) pendingQuery = '';
+                if (isFilterActivity(object)) pendingQuery = pendingSort = '';
                 var result = orig.apply(this, arguments);
                 if (pendingSave && isFilterActivity(object)) {
                     var pending = pendingSave;
@@ -304,6 +323,10 @@
             saved_filters_match:     { ru: 'Ключевые слова: совпадение', en: 'Keywords: match', uk: 'Ключові слова: збіг' },
             saved_filters_match_all: { ru: 'Все отмеченные (И)', en: 'All ticked (AND)', uk: 'Усі позначені (І)' },
             saved_filters_match_any: { ru: 'Любое из отмеченных (ИЛИ)', en: 'Any ticked (OR)', uk: 'Будь-яке з позначених (АБО)' },
+            saved_filters_sort:      { ru: 'Сортировка', en: 'Sort', uk: 'Сортування' },
+            saved_filters_sort_new:  { ru: 'Сначала новые', en: 'Newest first', uk: 'Спочатку нові' },
+            saved_filters_sort_old:  { ru: 'Сначала старые', en: 'Oldest first', uk: 'Спочатку старі' },
+            saved_filters_sort_popular: { ru: 'По популярности', en: 'Most popular', uk: 'За популярністю' },
             saved_filters_streaming: { ru: 'Стриминг (США)', en: 'Streaming (US)', uk: 'Стрімінг (США)' },
             saved_filters_delete:    { ru: 'Удалить', en: 'Delete', uk: 'Видалити' },
             saved_filters_empty:     { ru: 'Нет сохранённых фильтров', en: 'No saved filters', uk: 'Немає збережених фільтрів' },
