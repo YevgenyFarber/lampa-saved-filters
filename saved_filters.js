@@ -16,6 +16,11 @@
     var pendingSave = null;    // {summary, state} while "save & search" waits for the filter's activity
     var pendingRestore = null; // saved filter to load into the filter menu on its next open
     var editingName = '';      // name of the filter being edited, prefilled on save
+    var pendingKeyword = null; // TMDB keyword id to add to the search the filter is about to run
+
+    // TMDB has no "true crime" genre, only a keyword; Lampa's filter has no keyword option, so we add one.
+    // Kept module-level like Lampa's own groups so the choice survives the menu being rebuilt.
+    var keywordGroup = { sf_keyword: true, items: [{ any: true }, { title: 'True crime', keyword: 33722 }] };
 
     function t(key) { return Lampa.Lang.translate(key); }
 
@@ -175,17 +180,22 @@
 
         Lampa.Select.show = function (params) {
             if (isFilterMenu(params) && !params.saved_filters) {
+                keywordGroup.title = t('saved_filters_keyword');
+                keywordGroup.items[0].title = t('filter_any');
+                params.items.push(keywordGroup);
                 var groups = groupsOf(params.items);
 
                 if (pendingRestore) {
                     var before = kind(groups);
+                    keywordGroup.items.forEach(function (i) { i.selected = false; }); // older saves have no keyword
                     apply(groups, pendingRestore.state);
                     // Type switched movie<->tv: the menu was built with the other genre list, rebuild it.
                     if (kind(groups) !== before && openFilterMenu()) return;
-                    refreshSubtitles(groups);
                     editingName = pendingRestore.name;
                     pendingRestore = null;
                 }
+                if (!keywordGroup.items.some(function (i) { return i.selected; })) keywordGroup.items[0].selected = true;
+                refreshSubtitles(groups);
 
                 var origOnSelect = params.onSelect;
                 var count = load().length;
@@ -197,6 +207,10 @@
                     { title: t('saved_filters_title'), subtitle: count ? String(count) : t('saved_filters_none'), sf_list: true }
                 );
                 params.onSelect = function (a) {
+                    if (a.search || a.sf_save) {
+                        var kw = keywordGroup.items.find(function (i) { return i.selected && i.keyword; });
+                        pendingKeyword = kw ? kw.keyword : null;
+                    }
                     if (a.sf_save) {
                         askName(function (name) {
                             if (!name) return origShow.call(Lampa.Select, params);
@@ -217,6 +231,11 @@
         ['push', 'replace'].forEach(function (method) {
             var orig = Lampa.Activity[method];
             Lampa.Activity[method] = function (object) {
+                // shortcut: TMDB only; the CUB source ('?cat=') has no keyword parameter we know of.
+                if (pendingKeyword && isFilterActivity(object) && object.url.indexOf('discover') === 0) {
+                    object.url += '&with_keywords=' + pendingKeyword;
+                }
+                if (isFilterActivity(object)) pendingKeyword = null;
                 var result = orig.apply(this, arguments);
                 if (pendingSave && isFilterActivity(object)) {
                     var pending = pendingSave;
@@ -259,6 +278,7 @@
             saved_filters_edit_hint: { ru: 'Новое имя — копия, то же имя — обновить', en: 'New name = copy, same name = update', uk: 'Нова назва — копія, та сама — оновити' },
             saved_filters_editing:   { ru: 'Редактируется', en: 'Editing', uk: 'Редагується' },
             saved_filters_old:       { ru: 'Сохранён старой версией — пересохраните, чтобы изменять', en: 'Saved by an old version — re-save it to edit', uk: 'Збережено старою версією — перезбережіть, щоб змінювати' },
+            saved_filters_keyword:   { ru: 'Ключевое слово', en: 'Keyword', uk: 'Ключове слово' },
             saved_filters_delete:    { ru: 'Удалить', en: 'Delete', uk: 'Видалити' },
             saved_filters_empty:     { ru: 'Нет сохранённых фильтров', en: 'No saved filters', uk: 'Немає збережених фільтрів' },
             saved_filters_none:      { ru: 'Пусто', en: 'Empty', uk: 'Порожньо' },
