@@ -22,14 +22,24 @@
     // Kept module-level like Lampa's own groups so the choice survives the menu being rebuilt.
     // shortcut: streaming availability is for the US catalogue (watch_region=US); add a region option if that's wrong.
     function provider(title, ids) { return { title: title, query: 'with_watch_providers=' + ids + '&watch_region=US' }; }
-    var extraGroups = [
-        { lang: 'saved_filters_keyword', items: [{ any: true }, { title: 'True crime', query: 'with_keywords=33722' },
-            { title: 'Interrogation', query: 'with_keywords=15271|166582' }] }, // interrogation | police interrogation
-        { lang: 'saved_filters_streaming', items: [{ any: true },
-            provider('Netflix', '8'), provider('Amazon Prime Video', '9'), provider('Disney+', '337'),
-            provider('HBO Max', '1899'), provider('Apple TV+', '350'), provider('Hulu', '15'),
-            provider('Paramount+', '2303|2616'), provider('Peacock', '386|387')] }
-    ];
+    var keywordGroup = { lang: 'saved_filters_keyword', items: [
+        { title: 'True crime', checkbox: true, ids: ['33722'] },
+        { title: 'Interrogation', checkbox: true, ids: ['15271', '166582'] }] }; // interrogation | police interrogation
+    var matchGroup = { lang: 'saved_filters_match', items: [{ lang: 'saved_filters_match_all', and: true }, { lang: 'saved_filters_match_any' }] };
+    var streamingGroup = { lang: 'saved_filters_streaming', items: [{ lang: 'filter_any' },
+        provider('Netflix', '8'), provider('Amazon Prime Video', '9'), provider('Disney+', '337'),
+        provider('HBO Max', '1899'), provider('Apple TV+', '350'), provider('Hulu', '15'),
+        provider('Paramount+', '2303|2616'), provider('Peacock', '386|387')] };
+    var extraGroups = [keywordGroup, matchGroup, streamingGroup];
+
+    function extraQuery() {
+        var kws = keywordGroup.items.filter(function (i) { return i.checked; });
+        // shortcut: TMDB can't express A AND (B OR C), so "all" uses each keyword's main tag only.
+        var and = matchGroup.items[0].selected && kws.length > 1;
+        var query = kws.length ? '&with_keywords=' + kws.map(function (i) { return and ? i.ids[0] : i.ids.join('|'); }).join(and ? ',' : '|') : '';
+        var service = streamingGroup.items.find(function (i) { return i.selected && i.query; });
+        return query + (service ? '&' + service.query : '');
+    }
 
     function t(key) { return Lampa.Lang.translate(key); }
 
@@ -191,14 +201,14 @@
             if (isFilterMenu(params) && !params.saved_filters) {
                 extraGroups.forEach(function (g) {
                     g.title = t(g.lang);
-                    g.items[0].title = t('filter_any');
+                    g.items.forEach(function (i) { if (i.lang) i.title = t(i.lang); });
                     params.items.push(g);
                 });
                 var groups = groupsOf(params.items);
 
                 if (pendingRestore) {
                     var before = kind(groups);
-                    extraGroups.forEach(function (g) { g.items.forEach(function (i) { i.selected = false; }); }); // older saves lack them
+                    extraGroups.forEach(function (g) { g.items.forEach(function (i) { i.selected = i.checked = false; }); }); // older saves lack them
                     apply(groups, pendingRestore.state);
                     // Type switched movie<->tv: the menu was built with the other genre list, rebuild it.
                     if (kind(groups) !== before && openFilterMenu()) return;
@@ -206,7 +216,7 @@
                     pendingRestore = null;
                 }
                 extraGroups.forEach(function (g) {
-                    if (!g.items.some(function (i) { return i.selected; })) g.items[0].selected = true;
+                    if (!g.items.some(function (i) { return i.selected || i.checkbox; })) g.items[0].selected = true;
                 });
                 refreshSubtitles(groups);
 
@@ -221,10 +231,7 @@
                 );
                 params.onSelect = function (a) {
                     if (a.search || a.sf_save) {
-                        pendingQuery = extraGroups.map(function (g) {
-                            var on = g.items.find(function (i) { return i.selected && i.query; });
-                            return on ? '&' + on.query : '';
-                        }).join('');
+                        pendingQuery = extraQuery();
                     }
                     if (a.sf_save) {
                         askName(function (name) {
@@ -294,6 +301,9 @@
             saved_filters_editing:   { ru: 'Редактируется', en: 'Editing', uk: 'Редагується' },
             saved_filters_old:       { ru: 'Сохранён старой версией — пересохраните, чтобы изменять', en: 'Saved by an old version — re-save it to edit', uk: 'Збережено старою версією — перезбережіть, щоб змінювати' },
             saved_filters_keyword:   { ru: 'Ключевое слово', en: 'Keyword', uk: 'Ключове слово' },
+            saved_filters_match:     { ru: 'Ключевые слова: совпадение', en: 'Keywords: match', uk: 'Ключові слова: збіг' },
+            saved_filters_match_all: { ru: 'Все отмеченные (И)', en: 'All ticked (AND)', uk: 'Усі позначені (І)' },
+            saved_filters_match_any: { ru: 'Любое из отмеченных (ИЛИ)', en: 'Any ticked (OR)', uk: 'Будь-яке з позначених (АБО)' },
             saved_filters_streaming: { ru: 'Стриминг (США)', en: 'Streaming (US)', uk: 'Стрімінг (США)' },
             saved_filters_delete:    { ru: 'Удалить', en: 'Delete', uk: 'Видалити' },
             saved_filters_empty:     { ru: 'Нет сохранённых фильтров', en: 'No saved filters', uk: 'Немає збережених фільтрів' },

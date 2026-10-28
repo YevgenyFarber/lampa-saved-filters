@@ -74,28 +74,41 @@ main(); shown.onSelect(pick('saved_filters_title')); shown.onLong(shown.items[1]
 assert.equal(shown.items.find(i=>i.act==='edit').subtitle, 'saved_filters_old');
 console.log('OK click/long');
 // 8. True crime keyword: added to search + save, restored by Edit, not re-added when opening a saved filter
-const kwPick = (n) => { const g = pick('saved_filters_keyword'); g.items.forEach(i=>i.selected=false); g.items[n].selected = true; };
-main(); kwPick(1); main();
+const kwPick = (...names) => { pick('saved_filters_keyword').items.forEach(i=>i.checked=names.includes(i.title)); };
+main(); kwPick('True crime'); main();
 shown.onSelect(pick('Начать поиск'));
 assert.ok(pushed.at(-1).url.endsWith('&with_keywords=33722'), 'search gets the keyword');
 next = ['TC']; shown.onSelect(pick('saved_filters_save'));
 const tc = store.saved_filters.find(f=>f.name==='TC');
 assert.equal(tc.url.match(/with_keywords/g).length, 1); assert.deepEqual(tc.state['saved_filters_keyword'], ['True crime']);
-main(); kwPick(0); main();
+main(); kwPick(); main();
 shown.onSelect(pick('saved_filters_title')); shown.onSelect(shown.items.find(i=>i.title==='TC'));
 assert.equal(pushed.at(-1).url, tc.url, 'opening saved filter does not add the keyword twice');
 main(); shown.onSelect(pick('saved_filters_title')); shown.onLong(shown.items.find(i=>i.title==='TC')); shown.onSelect(shown.items.find(i=>i.act==='edit'));
 assert.equal(pick('saved_filters_keyword').subtitle, 'True crime', 'Edit restores the keyword');
-kwPick(0); main(); shown.onSelect(pick('Начать поиск'));
+kwPick(); main(); shown.onSelect(pick('Начать поиск'));
 assert.ok(!pushed.at(-1).url.includes('with_keywords'), 'no keyword when set to any');
 console.log('OK keyword');
 // 9. streaming provider + keyword combine; saved and restored
 const prPick = (title) => { const g = pick('saved_filters_streaming'); g.items.forEach(i=>i.selected=i.title===title); };
-main(); kwPick(1); prPick('Netflix'); main(); shown.onSelect(pick('Начать поиск'));
+main(); kwPick('True crime'); prPick('Netflix'); main(); shown.onSelect(pick('Начать поиск'));
 assert.ok(pushed.at(-1).url.endsWith('&with_keywords=33722&with_watch_providers=8&watch_region=US'), pushed.at(-1).url);
-main(); kwPick(0); prPick('Paramount+'); main(); next = ['P']; shown.onSelect(pick('saved_filters_save'));
+main(); kwPick(); prPick('Paramount+'); main(); next = ['P']; shown.onSelect(pick('saved_filters_save'));
 assert.ok(store.saved_filters.find(f=>f.name==='P').url.endsWith('&with_watch_providers=2303|2616&watch_region=US'));
 prPick('filter_any'); main();
 shown.onSelect(pick('saved_filters_title')); shown.onLong(shown.items.find(i=>i.title==='P')); shown.onSelect(shown.items.find(i=>i.act==='edit'));
 assert.equal(pick('saved_filters_streaming').subtitle, 'Paramount+', 'Edit restores the provider');
 console.log('OK streaming');
+// 10. several keywords: match all (AND, main tag each) vs any (OR, every tag); match choice saved
+const matchPick = (n) => { const g = pick('saved_filters_match'); g.items.forEach((i,k)=>i.selected=k===n); };
+prPick('filter_any');
+main(); kwPick('Interrogation'); main(); shown.onSelect(pick('Начать поиск'));
+assert.ok(pushed.at(-1).url.endsWith('&with_keywords=15271|166582'), 'single keyword keeps all its tags: ' + pushed.at(-1).url);
+main(); kwPick('True crime', 'Interrogation'); matchPick(0); main(); shown.onSelect(pick('Начать поиск'));
+assert.ok(pushed.at(-1).url.endsWith('&with_keywords=33722,15271'), pushed.at(-1).url);
+main(); matchPick(1); main(); next = ['OR']; shown.onSelect(pick('saved_filters_save'));
+assert.ok(store.saved_filters.find(f=>f.name==='OR').url.endsWith('&with_keywords=33722|15271|166582'));
+main(); kwPick(); matchPick(0); main();
+shown.onSelect(pick('saved_filters_title')); shown.onLong(shown.items.find(i=>i.title==='OR')); shown.onSelect(shown.items.find(i=>i.act==='edit'));
+assert.equal(pick('saved_filters_keyword').subtitle, 'True crime, Interrogation'); assert.equal(pick('saved_filters_match').subtitle, 'saved_filters_match_any');
+console.log('OK match');
