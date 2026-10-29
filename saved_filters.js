@@ -16,27 +16,44 @@
     var pendingSave = null;    // {summary, state} while "save & search" waits for the filter's activity
     var pendingRestore = null; // saved filter to load into the filter menu on its next open
     var editingName = '';      // name of the filter being edited, prefilled on save
-    var pendingQuery = '';     // TMDB discover params to add to the search the filter is about to run
-    var pendingSort = '';      // sort_by for that search ('date' becomes the movie/tv release-date field)
+    var pendingSearch = null;  // {query, sort, noGenres}: what our extra options add to the search the filter is about to run
 
     // Options Lampa's filter lacks: TMDB has no "true crime" genre (only a keyword) and no streaming-service genre.
     // Kept module-level like Lampa's own groups so the choice survives the menu being rebuilt.
     // shortcut: streaming availability is for the US catalogue (watch_region=US); add a region option if that's wrong.
-    function provider(title, ids) { return { title: title, query: 'with_watch_providers=' + ids + '&watch_region=US' }; }
-    var keywordGroup = { lang: 'saved_filters_keyword', items: [
-        { title: 'True crime', checkbox: true, ids: ['33722'] },
-        { title: 'Interrogation', checkbox: true, ids: ['15271', '166582'] }] }; // interrogation | police interrogation
+    // Include and exclude lists need their own item objects: each keeps its own ticks.
+    function keywords() {
+        return [{ title: 'True crime', checkbox: true, ids: ['33722'] },
+            { title: 'Interrogation', checkbox: true, ids: ['15271', '166582'] }]; // interrogation | police interrogation
+    }
+    function providers() {
+        return [['Netflix', '8'], ['Amazon Prime Video', '9'], ['Disney+', '337'], ['HBO Max', '1899'], ['Apple TV+', '350'],
+            ['Hulu', '15'], ['Paramount+', '2303', '2616'], ['Peacock', '386', '387']].map(function (p) {
+            return { title: p[0], checkbox: true, ids: p.slice(1) };
+        });
+    }
+    var keywordGroup = { lang: 'saved_filters_keyword', items: keywords() };
     var matchGroup = { lang: 'saved_filters_match', items: [{ lang: 'saved_filters_match_all', and: true }, { lang: 'saved_filters_match_any' }] };
-    var streamingGroup = { lang: 'saved_filters_streaming', items: [{ lang: 'filter_any' },
-        provider('Netflix', '8'), provider('Amazon Prime Video', '9'), provider('Disney+', '337'),
-        provider('HBO Max', '1899'), provider('Apple TV+', '350'), provider('Hulu', '15'),
-        provider('Paramount+', '2303|2616'), provider('Peacock', '386|387')] };
+    var noKeywordGroup = { lang: 'saved_filters_no_keywords', items: keywords() };
+    var streamingGroup = { lang: 'saved_filters_streaming', items: providers() };
+    var noStreamingGroup = { lang: 'saved_filters_no_streaming', items: providers() };
     // Lampa's TMDB filter has no sort (TMDB defaults to popularity); CUB has its own Sort, so this one is TMDB-only.
     var sortGroup = { lang: 'saved_filters_sort', tmdb: true, items: [
         { lang: 'saved_filters_sort_new', sort: 'date.desc' },
         { lang: 'saved_filters_sort_old', sort: 'date.asc' },
         { lang: 'saved_filters_sort_popular', sort: 'popularity.desc' }] };
-    var extraGroups = [keywordGroup, matchGroup, streamingGroup, sortGroup];
+    var extraGroups = [keywordGroup, matchGroup, noKeywordGroup, streamingGroup, noStreamingGroup, sortGroup];
+    // "Exclude genres" mirrors Lampa's genre list, which differs for movies and series; built on first sight, by type.
+    var noGenres = {};
+
+    function allExtra() {
+        return extraGroups.concat(Object.keys(noGenres).map(function (type) { return noGenres[type]; }));
+    }
+
+    function ticked(group, sep) {
+        return group.items.filter(function (i) { return i.checked; })
+            .map(function (i) { return i.ids ? i.ids.join(sep) : i.id; }).join(sep);
+    }
 
     // Saves made before sorting existed have no sort_by, so they also get the newest-first default.
     function sortQuery(url, sort) {
@@ -50,13 +67,26 @@
         return query;
     }
 
+    // TMDB: with_* '|' = any of, ',' = all of; every without_* list drops titles matching any of its values.
     function extraQuery() {
         var kws = keywordGroup.items.filter(function (i) { return i.checked; });
         // shortcut: TMDB can't express A AND (B OR C), so "all" uses each keyword's main tag only.
         var and = matchGroup.items[0].selected && kws.length > 1;
         var query = kws.length ? '&with_keywords=' + kws.map(function (i) { return and ? i.ids[0] : i.ids.join('|'); }).join(and ? ',' : '|') : '';
-        var service = streamingGroup.items.find(function (i) { return i.selected && i.query; });
-        return query + (service ? '&' + service.query : '');
+        var noKws = ticked(noKeywordGroup, ',');
+        if (noKws) query += '&without_keywords=' + noKws;
+        var on = ticked(streamingGroup, '|');
+        var off = ticked(noStreamingGroup, ',');
+        if (on) query += '&with_watch_providers=' + on;
+        if (off) query += '&without_watch_providers=' + off;
+        if (on || off) query += '&watch_region=US';
+        return query;
+    }
+
+    // Lampa already sends without_genres=16 (no animation); TMDB rejects the parameter twice, so merge into it.
+    function excludeGenres(url, ids) {
+        if (!ids) return url;
+        return url.indexOf('without_genres=') >= 0 ? url.replace('without_genres=', 'without_genres=' + ids + ',') : url + '&without_genres=' + ids;
     }
 
     function t(key) { return Lampa.Lang.translate(key); }
@@ -217,6 +247,17 @@
 
         Lampa.Select.show = function (params) {
             if (isFilterMenu(params) && !params.saved_filters) {
+                var genres = params.items.find(function (g) { return g.items && g.items.some(function (i) { return i.checkbox && i.id; }); });
+                var type = kind(groupsOf(params.items));
+                if (genres && !noGenres[type]) {
+                    noGenres[type] = { lang: 'saved_filters_no_genres', tmdb: true, items: genres.items.map(function (i) {
+                        return { title: i.title, checkbox: true, id: i.id };
+                    }) };
+                }
+                if (genres && Lampa.Storage.field('source') !== 'cub') {
+                    noGenres[type].title = t('saved_filters_no_genres');
+                    params.items.splice(params.items.indexOf(genres) + 1, 0, noGenres[type]);
+                }
                 extraGroups.forEach(function (g) {
                     g.title = t(g.lang);
                     g.items.forEach(function (i) { if (i.lang) i.title = t(i.lang); });
@@ -226,7 +267,7 @@
 
                 if (pendingRestore) {
                     var before = kind(groups);
-                    extraGroups.forEach(function (g) { g.items.forEach(function (i) { i.selected = i.checked = false; }); }); // older saves lack them
+                    allExtra().forEach(function (g) { g.items.forEach(function (i) { i.selected = i.checked = false; }); }); // older saves lack them
                     apply(groups, pendingRestore.state);
                     // Type switched movie<->tv: the menu was built with the other genre list, rebuild it.
                     if (kind(groups) !== before && openFilterMenu()) return;
@@ -249,8 +290,11 @@
                 );
                 params.onSelect = function (a) {
                     if (a.search || a.sf_save) {
-                        pendingQuery = extraQuery();
-                        pendingSort = sortGroup.items.find(function (i) { return i.selected; }).sort;
+                        pendingSearch = {
+                            query: extraQuery(),
+                            sort: sortGroup.items.find(function (i) { return i.selected; }).sort,
+                            noGenres: noGenres[kind(groups)] ? ticked(noGenres[kind(groups)], ',') : ''
+                        };
                     }
                     if (a.sf_save) {
                         askName(function (name) {
@@ -273,10 +317,11 @@
             var orig = Lampa.Activity[method];
             Lampa.Activity[method] = function (object) {
                 // shortcut: TMDB only; the CUB source ('?cat=') has no keyword/provider parameters we know of.
-                if (pendingSort && isFilterActivity(object) && object.url.indexOf('discover') === 0) {
-                    object.url += pendingQuery + sortQuery(object.url, pendingSort);
+                if (pendingSearch && isFilterActivity(object) && object.url.indexOf('discover') === 0) {
+                    var url = excludeGenres(object.url, pendingSearch.noGenres);
+                    object.url = url + pendingSearch.query + sortQuery(url, pendingSearch.sort);
                 }
-                if (isFilterActivity(object)) pendingQuery = pendingSort = '';
+                if (isFilterActivity(object)) pendingSearch = null;
                 var result = orig.apply(this, arguments);
                 if (pendingSave && isFilterActivity(object)) {
                     var pending = pendingSave;
@@ -327,6 +372,9 @@
             saved_filters_sort_new:  { ru: 'Сначала новые', en: 'Newest first', uk: 'Спочатку нові' },
             saved_filters_sort_old:  { ru: 'Сначала старые', en: 'Oldest first', uk: 'Спочатку старі' },
             saved_filters_sort_popular: { ru: 'По популярности', en: 'Most popular', uk: 'За популярністю' },
+            saved_filters_no_genres: { ru: 'Исключить жанры', en: 'Exclude genres', uk: 'Виключити жанри' },
+            saved_filters_no_keywords: { ru: 'Исключить ключевые слова', en: 'Exclude keywords', uk: 'Виключити ключові слова' },
+            saved_filters_no_streaming: { ru: 'Исключить стриминг (США)', en: 'Exclude streaming (US)', uk: 'Виключити стрімінг (США)' },
             saved_filters_streaming: { ru: 'Стриминг (США)', en: 'Streaming (US)', uk: 'Стрімінг (США)' },
             saved_filters_delete:    { ru: 'Удалить', en: 'Delete', uk: 'Видалити' },
             saved_filters_empty:     { ru: 'Нет сохранённых фильтров', en: 'No saved filters', uk: 'Немає збережених фільтрів' },

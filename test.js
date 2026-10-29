@@ -8,12 +8,12 @@ const L = { nochoice: 'Не выбрано', title_filter: 'Фильтр' };
 const data = {
   type: {title:'Тип', items:[{title:'Фильмы',cat:'movie',selected:true},{title:'Сериалы',cat:'tv'}]},
   rating: {title:'Рейтинг', items:[{title:'Любой'},{title:'от 6',start:6},{title:'от 8',start:8}]},
-  genres_movie: {title:'Жанр', items:[{title:'Комедия',checkbox:true},{title:'Драма',checkbox:true}]},
-  genres_tv: {title:'Жанр', items:[{title:'Детектив',checkbox:true},{title:'Драма',checkbox:true}]},
+  genres_movie: {title:'Жанр', items:[{title:'Комедия',checkbox:true,id:35},{title:'Драма',checkbox:true,id:18}]},
+  genres_tv: {title:'Жанр', items:[{title:'Детектив',checkbox:true,id:9648},{title:'Драма',checkbox:true,id:18}]},
 };
 function sub(g){ const s=g.items.filter(i=>i.selected||i.checked).map(i=>i.title); g.subtitle = s.length? s.join(', '):'Не выбрано'; }
 function query(){ const cat=data.type.items.find(i=>i.selected).cat; const r=data.rating.items.find(i=>i.selected&&i.start);
-  const g=data['genres_'+cat].items.filter(i=>i.checked).map(i=>i.title); return `discover/${cat}?r=${r?r.start:''}&g=${g.join(',')}`; }
+  const g=data['genres_'+cat].items.filter(i=>i.checked).map(i=>i.title); return `discover/${cat}?${lampaWG ? 'without_genres=16&' : ''}r=${r?r.start:''}&g=${g.join(',')}`; }
 function main(){ for (const k in data) sub(data[k]); const cat=data.type.items.find(i=>i.selected).cat;
   Lampa.Select.show({title:'Фильтр', items:[{title:'Начать поиск',search:true},data.type,data.rating,data['genres_'+cat]],
     onSelect(a){ if(a.search) Lampa.Activity.push({component:'category_full',url:query(),source:'tmdb'}); }}); }
@@ -26,7 +26,7 @@ global.Lampa = {
   Input: { edit(p, cb){ inputs.push(p.value); pushesAtInput = pushed.length; cb(next.shift()); } },
   Controller: { toggle(){} }, Noty: { show(){} }, Listener: { follow(){} },
 };
-let next = [], pushesAtInput = -1;
+let next = [], pushesAtInput = -1, lampaWG = false;
 eval(fs.readFileSync(__dirname + '/saved_filters.js', 'utf8'));
 const NEW = '&sort_by=primary_release_date.desc&primary_release_date.lte=' + new Date().toISOString().slice(0, 10);
 const pick = (title) => shown.items.find(i => i.title === title);
@@ -91,18 +91,19 @@ kwPick(); main(); shown.onSelect(pick('Начать поиск'));
 assert.ok(!pushed.at(-1).url.includes('with_keywords'), 'no keyword when set to any');
 console.log('OK keyword');
 // 9. streaming provider + keyword combine; saved and restored
-const prPick = (title) => { const g = pick('saved_filters_streaming'); g.items.forEach(i=>i.selected=i.title===title); };
+const tick = (group, ...names) => pick(group).items.forEach(i=>i.checked=names.includes(i.title));
+const prPick = (...names) => tick('saved_filters_streaming', ...names);
 main(); kwPick('True crime'); prPick('Netflix'); main(); shown.onSelect(pick('Начать поиск'));
 assert.ok(pushed.at(-1).url.endsWith('&with_keywords=33722&with_watch_providers=8&watch_region=US' + NEW), pushed.at(-1).url);
 main(); kwPick(); prPick('Paramount+'); main(); next = ['P']; shown.onSelect(pick('saved_filters_save'));
 assert.ok(store.saved_filters.find(f=>f.name==='P').url.endsWith('&with_watch_providers=2303|2616&watch_region=US' + NEW));
-prPick('filter_any'); main();
+prPick(); main();
 shown.onSelect(pick('saved_filters_title')); shown.onLong(shown.items.find(i=>i.title==='P')); shown.onSelect(shown.items.find(i=>i.act==='edit'));
 assert.equal(pick('saved_filters_streaming').subtitle, 'Paramount+', 'Edit restores the provider');
 console.log('OK streaming');
 // 10. several keywords: match all (AND, main tag each) vs any (OR, every tag); match choice saved
 const matchPick = (n) => { const g = pick('saved_filters_match'); g.items.forEach((i,k)=>i.selected=k===n); };
-prPick('filter_any');
+prPick();
 main(); kwPick('Interrogation'); main(); shown.onSelect(pick('Начать поиск'));
 assert.ok(pushed.at(-1).url.endsWith('&with_keywords=15271|166582' + NEW), 'single keyword keeps all its tags: ' + pushed.at(-1).url);
 main(); kwPick('True crime', 'Interrogation'); matchPick(0); main(); shown.onSelect(pick('Начать поиск'));
@@ -128,3 +129,22 @@ main(); shown.onSelect(pick('saved_filters_title')); shown.onSelect(shown.items.
 assert.equal(pushed.at(-1).url, store.saved_filters.find(f=>f.name==='POP').url, 'saved sort kept');
 Lampa.Storage.field = () => 'cub'; main(); assert.equal(pick('saved_filters_sort'), undefined, 'CUB has its own sort');
 console.log('OK sort');
+// 12. multi-choice streaming + exclude genres / keywords / streaming
+Lampa.Storage.field = () => 'tmdb'; data.type.items.forEach(i=>i.selected=i.cat==='movie');
+main(); assert.ok(shown.items.indexOf(pick('saved_filters_no_genres')) === shown.items.indexOf(pick('Жанр')) + 1, 'exclude genres sits under Жанр');
+assert.deepEqual(pick('saved_filters_no_genres').items.map(i=>i.title), ['Комедия', 'Драма'], 'movie genre list');
+prPick('Netflix', 'Paramount+'); tick('saved_filters_no_streaming', 'Hulu', 'Peacock'); tick('saved_filters_no_keywords', 'Interrogation');
+tick('saved_filters_no_genres', 'Драма'); main(); shown.onSelect(pick('Начать поиск'));
+let u = pushed.at(-1).url;
+assert.ok(u.includes('&with_watch_providers=8|2303|2616&without_watch_providers=15,386,387&watch_region=US'), u);
+assert.ok(u.includes('&without_keywords=15271,166582'), u); assert.ok(u.includes('&without_genres=18'), u);
+lampaWG = true; main(); shown.onSelect(pick('Начать поиск')); u = pushed.at(-1).url;
+assert.ok(u.startsWith('discover/movie?without_genres=18,16&') && u.split('without_genres').length === 2, 'merged into Lampa\'s without_genres: ' + u);
+next = ['EX']; shown.onSelect(pick('saved_filters_save')); lampaWG = false;
+data.type.items.forEach(i=>i.selected=i.cat==='tv'); main();
+assert.deepEqual(pick('saved_filters_no_genres').items.map(i=>i.title), ['Детектив', 'Драма'], 'tv genre list');
+prPick(); tick('saved_filters_no_streaming'); tick('saved_filters_no_keywords'); main();
+shown.onSelect(pick('saved_filters_title')); shown.onLong(shown.items.find(i=>i.title==='EX')); shown.onSelect(shown.items.find(i=>i.act==='edit'));
+assert.equal(pick('saved_filters_no_genres').subtitle, 'Драма', 'Edit restores excluded genre (switched back to movie)');
+assert.equal(pick('saved_filters_streaming').subtitle, 'Netflix, Paramount+'); assert.equal(pick('saved_filters_no_streaming').subtitle, 'Hulu, Peacock');
+console.log('OK exclude');
